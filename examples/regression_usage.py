@@ -109,23 +109,23 @@ class ExtraTreeRegressorParams:
 
 class MyEvolOptimizer(EvolutionaryOptimizer):
     def __init__(self,
+                 individuals_paramgrid: Dict[type, Dict[str, Any]],
                  population_size: int,
-                 individuals_paramdict: Dict[type, Dict[str, List]],
                  selection_size: int,
                  mutation_probability: float,
-                 crossover_type: str,
-                 selection_type: str,
-                 mutation_type: str,
-                 comma_plus: str,
-                 elite_size: Optional[int],
-                 num_parents: int,
-                 num_children: int,
-                 tournament_size: int,
-                 random_state: Optional[int],
-                 verbose: int):
-        super().__init__(population_size, individuals_paramdict, selection_size, mutation_probability,
-                         crossover_type, selection_type, mutation_type, comma_plus, elite_size,
-                         num_parents, num_children, tournament_size, random_state, verbose)
+                 num_parents: int = 2,
+                 num_children: int = 1,
+                 tournament_size: int = 8,
+                 elite_size: Optional[int] = None,
+                 commaplus: str = 'comma',
+                 crossover_type: str = 'combination',
+                 selection_type: str = 'tournament',
+                 mutation_type: str = 'multiple',
+                 random_state: Optional[int] = None,
+                 verbose: int = 0):
+        super().__init__(individuals_paramgrid, population_size, selection_size, mutation_probability,
+                         num_parents, num_children, tournament_size, elite_size, commaplus, crossover_type,
+                         selection_type, mutation_type, random_state, verbose)
 
     def score_individual(self, individual: Any,
                          *args: Optional[Any], **kwargs: Optional[Any]) -> Tuple[Any, float]:
@@ -160,16 +160,16 @@ if __name__ == '__main__':
         GradientBoostingRegressor: asdict(GradientBoostingRegressorParams())
     }
 
-    meo = MyEvolOptimizer(population_size=200,
-                          individuals_paramdict=paramdict,
-                          mutation_probability=0.05,
+    meo = MyEvolOptimizer(individuals_paramgrid=paramdict,
+                          population_size=200,
                           selection_size=100,
+                          mutation_probability=0.05,
                           num_parents=2,
                           num_children=1,
                           elite_size=5,
                           crossover_type='combination',
                           mutation_type='multiple',
-                          comma_plus='comma',
+                          commaplus='comma',
                           selection_type='tournament',
                           tournament_size=8,
                           random_state=None,

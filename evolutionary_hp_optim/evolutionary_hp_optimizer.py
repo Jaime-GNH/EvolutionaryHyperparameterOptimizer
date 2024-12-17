@@ -184,34 +184,34 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
     """
 
     def __init__(self,
-                 population_size: int,
                  individuals_paramgrid: Dict[type, Dict[str, Any]],
+                 population_size: int,
                  selection_size: int,
                  mutation_probability: float,
-                 crossover_type: str = 'combination',
-                 selection_type: str = 'tournament',
-                 mutation_type: str = 'multiple',
-                 commaplus: str = 'comma',
-                 elite_size: Optional[int] = None,
                  num_parents: int = 2,
                  num_children: int = 1,
                  tournament_size: int = 8,
+                 elite_size: Optional[int] = None,
+                 commaplus: str = 'comma',
+                 crossover_type: str = 'combination',
+                 selection_type: str = 'tournament',
+                 mutation_type: str = 'multiple',
                  random_state: Optional[int] = None,
                  verbose: int = 0):
         """
         Class constructor
-        :param population_size: Number of individuals in initial population
         :param individuals_paramgrid: Parameter grid for each individual family
+        :param population_size: Number of individuals in initial population
         :param selection_size: Number of selected individuals after each evaluation (mu)
         :param mutation_probability: Probability of mutating a gene.
-        :param crossover_type: How parent genes are combined to generate offspring
-        :param selection_type: How selection of survivors is made
-        :param mutation_type: If single or multiple genes ar mutated
-        :param commaplus: Select mu (comma) or select mu and lambda (plus)
-        :param elite_size: Number of unaltered best individuals per family in each generation.
         :param num_parents: Number of parents per child
         :param num_children: Number of children per offspring
         :param tournament_size: Numbers of individuals selected in each tournament
+        :param elite_size: Number of unaltered best individuals per family in each generation.
+        :param commaplus: Select mu (comma) or select mu and lambda (plus)
+        :param crossover_type: How parent genes are combined to generate offspring
+        :param selection_type: How selection of survivors is made
+        :param mutation_type: If single or multiple genes ar mutated
         :param random_state: Deterministic random state.
         :param verbose: Verbosity.
         """
