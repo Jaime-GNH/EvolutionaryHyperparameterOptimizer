@@ -9,31 +9,47 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from tqdm import tqdm
 
 
-class BaseEvolutionaryEstimator:
+class BaseEvolutionaryOptimizer:
+
     @staticmethod
-    def initialize_population(population_size: int,
-                              individuals_paramgrid: Dict[type, Dict[str, Any]],
-                              population: Optional[Dict] = None,
-                              families: Optional[Dict] = None) -> Tuple[Dict[int, Any], Dict[int, str]]:
+    def _get_param_grid(paramdict: Dict[str, List], k: int) -> List[Dict[str, Any]]:
+        """
+        Obtains k random individuals from all posible combinations in a parameter dict
+        :param paramdict: Parameter dict
+        :param k: Number of random individuals
+        """
+        return [{key: random.choice(paramdict[key]) for key in paramdict} for _ in range(k)]
+
+    def initialize_population(
+            self, population_size: int,
+            individuals_paramdict: Dict[type, Dict[str, List]],
+            population: Optional[Dict] = None,
+            individual_params: Optional[Dict] = None,
+            families: Optional[Dict] = None) -> Tuple[Dict[int, Any],  Dict[int, Any], Dict[int, str]]:
         """
         Initializes population.
         :param population_size: Num individuals
-        :param individuals_paramgrid: Tuple of dicts with param combinations used for evolution.
+        :param individuals_paramdict: Tuple of dicts with param combinations used for evolution.
         :param population: current population
+        :param individual_params: current individual parameters
         :param families: current families
         :return: Population and families
         """
         assert type(population) == type(families), f'If population is not None families cant be None and viceversa.'
         population = {} if population is None else population
         families = {} if families is None else families
-        family_fraction = (population_size - len(population)) // len(list(individuals_paramgrid))
+        individual_params = {} if individual_params is None else individual_params
+        family_fraction = (population_size - len(population)) // len(list(individuals_paramdict))
         idx = 0 if len(population) == 0 else max(list(population))
         while len(population) < population_size:
-            family = random.choice(list(individuals_paramgrid))
+            family = random.choice(list(individuals_paramdict))
             try:
-                param_grid = random.choices(ParameterGrid(individuals_paramgrid[family]), k=family_fraction)
+                param_grid = self._get_param_grid(individuals_paramdict[family], k=family_fraction)
                 population.update({
                     idx + 1: family(**pg) for pg in param_grid
+                })
+                individual_params.update({
+                    idx + 1: pg for pg in param_grid
                 })
                 families.update({
                     idx + 1: family.__name__
@@ -41,7 +57,7 @@ class BaseEvolutionaryEstimator:
                 idx += 1
             except ValueError:
                 pass
-        return population, families
+        return population, individual_params, families
 
     @staticmethod
     def mutate_param(param: Optional[Any], mutation_probability: float, param_spec: List[Any]):
@@ -70,18 +86,22 @@ class BaseEvolutionaryEstimator:
                 )
         return param
 
-    def mutate_inidividual(self, individual: Any, mutation_probabity: float,
-                           individual_paramgrid: dict, how: str = 'multiple') -> Any:
+    def mutate_inidividual(self,
+                           individual: Any,
+                           individual_params: Dict[str, Any],
+                           mutation_probabity: float,
+                           individual_paramgrid: dict, how: str = 'multiple') -> Tuple[Any, Dict[str, Any]]:
         """
         Mutates params of an individual given a mutation probability and param_grid
         :param individual: Individual to mutate
+        :param individual_params: individual current parameters
         :param mutation_probabity: Param value mutation probability
         :param individual_paramgrid: Param grid for knowing boundaries and types.
         :param how: single (single param mutation) or multiple (multiple param mutation)
         :return: New individual.
         """
         estimator = individual.__class__
-        params = individual.get_params()
+        params = individual_params
         if how == 'multiple':
             for param in params:
                 params.update(
@@ -95,24 +115,29 @@ class BaseEvolutionaryEstimator:
         else:
             raise ValueError(f'arg how must be either "multiple" or "single". Got {how}')
 
-        return estimator(**params)
+        return estimator(**params), params
 
     @staticmethod
-    def crossover(*parents: Any, num_children: int, how: str) -> List[Any]:
+    def crossover(*parents: Any, parents_params: Tuple[Dict[str, Any]],
+                  num_children: int, how: str) -> Tuple[List[Any], List[Dict[str, Any]]]:
         """
         Performs a crossover between any number of parents and return any number of children
-        :param parents: Any BaseEstimators of same kind
+        :param parents: Any Estimators of same kind
+        :param parents_params: Parent parameters
         :param num_children: Number of children to generate
         :param how: combination (combination of parents params) or merge (mean aggregation of parents params)
         :return: Children generated.
         """
         assert all(isinstance(p, parents[0].__class__) for p in parents), \
             f'All parents must be from same population. Got {[p.__class__ for p in parents]}'
+        assert len(parents) == len(parents_params), (f'parents and parent_params must have same lenght. '
+                                                     f'Got {len(parents)} != {len(parents_params)}')
         estimator = parents[0].__class__
-        params = {k: [v1] for k, v1 in parents[0].get_params().items()}
-        for parent in parents[1:]:
-            params.update({k: params[k] + [parent.get_params().get(k)] for k in params})
+        params = {k: [v1] for k, v1 in parents_params[0].items()}
+        for parent in parents_params[1:]:
+            params.update({k: params[k] + [parent.get(k)] for k in params})
         childs = []
+        childs_params = []
         for child in range(num_children):
             if how == 'combination':
                 child_params = {
@@ -138,14 +163,15 @@ class BaseEvolutionaryEstimator:
                 raise ValueError(f'arg how must be either "combination" or "merge". Got {how}')
             try:
                 childs.append(estimator(**child_params))
+                childs_params.append(child_params)
             except ValueError:
                 pass
-        return childs
+        return childs, childs_params
 
 
-class EvolutionaryEstimator(BaseEvolutionaryEstimator):
+class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
     """
-    Evolutionary Algorithms applied to sklearn parametrization optimization
+    Evolutionary Algorithms applied to hyperparameter optimization
     """
 
     def __init__(self,
@@ -153,15 +179,15 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
                  individuals_paramgrid: Dict[type, Dict[str, Any]],
                  selection_size: int,
                  mutation_probability: float,
-                 crossover_type: str = 'combination',
-                 selection_type: str = 'score',
-                 mutation_type: str = 'multiple',
-                 commaplus: str = 'comma',
-                 elite_size: Optional[int] = 1,
-                 num_parents: int = 4,
-                 num_children: int = 2,
-                 tournament_size: int = 8,
-                 verbose: int = 1):
+                 crossover_type: str,
+                 selection_type: str,
+                 mutation_type: str,
+                 commaplus: str,
+                 elite_size: Optional[int],
+                 num_parents: int,
+                 num_children: int,
+                 tournament_size: int,
+                 verbose: int):
         """
         Class constructor
         :param population_size: Number of individuals in initial population
@@ -278,11 +304,16 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
         """
         return individual, float('-inf')
 
-    def score_population(self, population: Dict, families: Dict,
-                         *args: Optional[Any], **kwargs: Optional[Any]) -> Tuple[Dict[int, Any], Dict[int, str]]:
+    def score_population(self,
+                         population: Dict,
+                         individual_params: Dict,
+                         families: Dict,
+                         *args: Optional[Any],
+                         **kwargs: Optional[Any]) -> Tuple[Dict[int, Any], Dict[int, Any], Dict[int, str]]:
         """
         Scores a single individual
         :param population: Population to score
+        :param individual_params: Individual parameters
         :param families: Family mapping
         :param args: Arguments for scoring
         :param kwargs: Keyword Arguments for scoring
@@ -314,21 +345,20 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
                          if v > 0}
         sorted_population = {i: population[i] for i in sorted_scores}
         population = {i: sorted_population[i] for i in list(sorted_population)[:self.mu]}
+        individual_params = {i: individual_params[i] for i in list(sorted_population)[:self.mu]}
         families = {i: families[i] for i in list(sorted_population)[:self.mu]}
         self.scores = {i: sorted_scores[i] for i in list(sorted_scores)[:self.mu]}
         if len(population) < (self.mu if self.commaplus == 'comma' else self.mu + self.lambd):
-            refill_population, refill_families = self.initialize_population(
+            refill_population, refill_individual_params, refill_families = self.initialize_population(
                 population_size=self.lambd if self.commaplus == 'comma' else self.mu + self.lambd,
-                individuals_paramgrid=self.individuals_paramgrid,
+                individuals_paramdict=self.individuals_paramgrid,
                 population=population,
+                individual_params=individual_params,
                 families=families
             )
-            population.update(
-                refill_population
-            )
-            families.update(
-                refill_families
-            )
+            population.update(refill_population)
+            individual_params.update(refill_individual_params)
+            families.update(refill_families)
         sc_values = list(self.scores.values())
         if self.verbose > 1:
             lg.info(
@@ -341,14 +371,17 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
             lg.info(f'Best scored model: \n{population[list(population)[0]]} -> '
                     f'Score: {np.max(sc_values): .3f}')
         self.fittest_individual = population[list(population)[0]]
-        return population, families
+        return population, individual_params, families
 
     def _update_population(self,
-                           population: Dict, families: Dict) -> Tuple[Dict[int, Any], Dict[int, str]]:
+                           population: Dict,
+                           individual_params: Dict,
+                           families: Dict) -> Tuple[Dict[int, Any], Dict[int, Any], Dict[int, str]]:
         """
         Update population by generating new individuals by crossover until population size is reached
          then mutate individuals
         :param population: Current population
+        :param individual_params: Current individual parameters
         :param families: Current families
         :return: Population and families
         """
@@ -358,42 +391,49 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
                 elite += [idx for idx, ind in population.items() if ind.__class__.__name__ == f][:self.elite_size]
         survivor_population = list(population.values())
         survivor_population_idx = list(population)
+        survivor_params = list(individual_params.values())
         survivor_families = list(families.values())
         while len(population) < self.lambd:
             family = random.choice(survivor_families)
-            members = [sp for sp, f in zip(survivor_population, survivor_families) if f == family]
+            members = [(sp, parm) for sp, parm, f in zip(survivor_population,
+                                                         survivor_params,
+                                                         survivor_families) if f == family]
             if self.selection_type == 'score':
-                parents = random.sample(members,
-                                        k=min(self.num_parents, len(members)))
+                parents, parents_params = zip(*random.sample(members,
+                                                             k=min(self.num_parents, len(members))))
             elif self.selection_type == 'tournament':
                 members_score = [self.scores[i] for i, f in
                                  zip(survivor_population_idx, survivor_families) if f == family]
-                members_idx = random.sample(range(len(members)),
-                                            k=min(self.tournament_size, len(members)))
-                tournament = [members[idx] for idx in members_idx]
-                parents = random.choices(tournament, weights=[members_score[idx] for idx in members_idx],
-                                         k=min(self.num_parents, len(members)))
+                tournament = random.sample(range(len(members)),
+                                           k=min(self.tournament_size, len(members)))
+                idxs = random.choices(tournament, weights=[members_score[idx] for idx in tournament],
+                                      k=min(self.num_parents, len(members)))
+                parents, parents_params = zip(*[members[idx] for idx in idxs])
             else:
                 error = ValueError(f'selection_type must be "score" or "tournament". Got {self.selection_type}')
                 lg.error(error)
                 raise error
             if len(parents) > 0:
-                children = self.crossover(*parents, num_children=self.num_children, how=self.crossover_type)
+                children, children_params = self.crossover(
+                    *parents, parents_params=parents_params,
+                    num_children=self.num_children, how=self.crossover_type
+                )
                 if len(children) > 0:
-                    for child in children:
-                        population.update({
-                            max(population) + 1: child
-                        })
-                        families.update({
-                            max(families) + 1: family
-                        })
-        population.update({
-            i: self.mutate_inidividual(population[i], self.pm, self.individuals_paramgrid[population[i].__class__],
-                                       how=self.mutation_type)
-            for i in set(population).difference(elite)
-        })
+                    for child, child_params in zip(children, children_params):
+                        population.update({max(population) + 1: child})
+                        individual_params.update({max(individual_params) + 1: child_params})
+                        families.update({max(families) + 1: family})
+        for i in set(population).difference(elite):
+            new_ind, new_params = self.mutate_inidividual(population[i],
+                                                          individual_params[i],
+                                                          self.pm,
+                                                          self.individuals_paramgrid[population[i].__class__],
+                                                          how=self.mutation_type)
+            population.update({i: new_ind})
+            individual_params.update({i: new_params})
+
         self.scores = {k: self.scores[k] for k in elite if k in self.scores}
-        return population, families
+        return population, individual_params, families
 
     def evolution(self,
                   max_generations: int, patience: Optional[int] = None,
@@ -417,21 +457,26 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
             patience, diversity_increase_factor = self._check_increase_diversity_dinamically_viability(
                 patience, diversity_increase_factor
             )
-        population, families = self.initialize_population(population_size=self.lambd,
-                                                          individuals_paramgrid=self.individuals_paramgrid)
+        population, individual_params, families = self.initialize_population(
+            population_size=self.lambd,
+            individuals_paramdict=self.individuals_paramgrid
+        )
         generation = 1
         g_no_improve = 0
         max_score = -float('inf')
         while True:
             if self.verbose > 0:
                 lg.info(f'Generation: {generation} / {max_generations}. ')
-            if self.verbose > 1:
                 if patience is not None:
                     lg.info(f'\t-Generations without improvement: {g_no_improve} / {patience}')
+            if self.verbose > 1:
                 lg.info(f'\t-Population size: {self.lambd}')
                 lg.info(f'\t-Num survivors: {self.mu}')
                 lg.info(f'\t-Mutation probability: {self.pm: .2f}')
-            population, families = self.score_population(population, families, *score_args, **score_kwargs)
+            population, individual_params, families = self.score_population(population,
+                                                                            individual_params,
+                                                                            families,
+                                                                            *score_args, **score_kwargs)
             if max(self.scores.values()) > max_score:
                 max_score = max(self.scores.values())
                 g_no_improve = 0
@@ -446,7 +491,7 @@ class EvolutionaryEstimator(BaseEvolutionaryEstimator):
                 break
             if max_score_val is not None and max_score >= max_score_val:
                 break
-            population, families = self._update_population(population, families)
+            population, individual_params, families = self._update_population(population, individual_params, families)
             generation += 1
         return population[list(population)[0]]
 

@@ -1,3 +1,3 @@
-from evolutionary_estimator import EvolutionaryEstimator
+from .evolutionary_estimator import EvolutionaryOptimizer
 
-__all__ = ['EvolutionaryEstimator']
+__all__ = ['EvolutionaryOptimizer']
