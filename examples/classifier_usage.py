@@ -6,7 +6,7 @@ from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, Gradi
 from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
 from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
-from evolutionary_hp_optim.evolutionary_estimator import EvolutionaryEstimator
+from evolutionary_hp_optim import EvolutionaryEstimator
 
 logger = lg.getLogger(__name__)
 
