@@ -1,3 +1,3 @@
-from .evolutionary_estimator import EvolutionaryOptimizer
+from .evolutionary_hp_optimizer import EvolutionaryOptimizer
 
 __all__ = ['EvolutionaryOptimizer']

@@ -12,6 +12,15 @@ from tqdm import tqdm
 class BaseEvolutionaryOptimizer:
 
     @staticmethod
+    def _set_random_state(random_state: int):
+        """
+        Set deterministic seed.
+        :param random_state: seed or random_state for reproducibility.
+        """
+        random.seed(random_state)
+        np.random.seed(random_state)
+
+    @staticmethod
     def _get_param_grid(paramdict: Dict[str, List], k: int) -> List[Dict[str, Any]]:
         """
         Obtains k random individuals from all posible combinations in a parameter dict
@@ -179,15 +188,16 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
                  individuals_paramgrid: Dict[type, Dict[str, Any]],
                  selection_size: int,
                  mutation_probability: float,
-                 crossover_type: str,
-                 selection_type: str,
-                 mutation_type: str,
-                 commaplus: str,
-                 elite_size: Optional[int],
-                 num_parents: int,
-                 num_children: int,
-                 tournament_size: int,
-                 verbose: int):
+                 crossover_type: str = 'combination',
+                 selection_type: str = 'tournament',
+                 mutation_type: str = 'multiple',
+                 commaplus: str = 'comma',
+                 elite_size: Optional[int] = None,
+                 num_parents: int = 2,
+                 num_children: int = 1,
+                 tournament_size: int = 8,
+                 random_state: Optional[int] = None,
+                 verbose: int = 0):
         """
         Class constructor
         :param population_size: Number of individuals in initial population
@@ -202,6 +212,7 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
         :param num_parents: Number of parents per child
         :param num_children: Number of children per offspring
         :param tournament_size: Numbers of individuals selected in each tournament
+        :param random_state: Deterministic random state.
         :param verbose: Verbosity.
         """
         assert crossover_type in ['combination', 'merge'], \
@@ -212,6 +223,8 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
             f'mutation_type must be one of: "single", "multiple". Got {mutation_type}'
         assert commaplus in ['comma', 'plus'], \
             f'commaplus argument must be one of "comma", "plus". Got {commaplus}'
+        if random_state is not None:
+            self._set_random_state(random_state)
         self.lambd = population_size
         self.mu = selection_size
         self.commaplus = commaplus
@@ -341,8 +354,7 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
                     f'\t-Total time: {sum(times): .3f}\n'
                     f'\t-Individual time: {np.mean(times): .3f} \u00B1 {np.std(times): .3f}')
 
-        sorted_scores = {k: v for k, v in dict(sorted(self.scores.items(), key=lambda x: x[1], reverse=True)).items()
-                         if v > 0}
+        sorted_scores = {k: v for k, v in dict(sorted(self.scores.items(), key=lambda x: x[1], reverse=True)).items()}
         sorted_population = {i: population[i] for i in sorted_scores}
         population = {i: sorted_population[i] for i in list(sorted_population)[:self.mu]}
         individual_params = {i: individual_params[i] for i in list(sorted_population)[:self.mu]}
@@ -406,7 +418,9 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
                                  zip(survivor_population_idx, survivor_families) if f == family]
                 tournament = random.sample(range(len(members)),
                                            k=min(self.tournament_size, len(members)))
-                idxs = random.choices(tournament, weights=[members_score[idx] for idx in tournament],
+                weights = [members_score[idx] - min(members_score) for idx in tournament]
+                idxs = random.choices(tournament,
+                                      weights=weights if sum(weights) > 0. else None,
                                       k=min(self.num_parents, len(members)))
                 parents, parents_params = zip(*[members[idx] for idx in idxs])
             else:
@@ -468,7 +482,7 @@ class EvolutionaryOptimizer(BaseEvolutionaryOptimizer):
             if self.verbose > 0:
                 lg.info(f'Generation: {generation} / {max_generations}. ')
                 if patience is not None:
-                    lg.info(f'\t-Generations without improvement: {g_no_improve} / {patience}')
+                    lg.info(f'Generations without improvement: {g_no_improve} / {patience}')
             if self.verbose > 1:
                 lg.info(f'\t-Population size: {self.lambd}')
                 lg.info(f'\t-Num survivors: {self.mu}')
