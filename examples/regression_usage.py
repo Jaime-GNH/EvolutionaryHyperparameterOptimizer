@@ -1,10 +1,10 @@
 from typing import Dict, Any, Tuple, Optional, List
 from dataclasses import asdict, dataclass, field
 import logging as lg
-from sklearn.metrics import roc_auc_score
-from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, GradientBoostingClassifier
-from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
-from sklearn.datasets import load_breast_cancer
+from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, GradientBoostingRegressor
+from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
+from sklearn.datasets import load_diabetes
 from sklearn.model_selection import train_test_split
 from evolutionary_hp_optim import EvolutionaryOptimizer
 
@@ -12,9 +12,9 @@ logger = lg.getLogger(__name__)
 
 
 @dataclass
-class ExtraTreesClassifierParams:
+class ExtraTreesRegressorParams:
     n_estimators: List[int] = field(default_factory=lambda: [10, 50, 100, 250])
-    criterion: List[str] = field(default_factory=lambda: ['gini'])
+    criterion: List[str] = field(default_factory=lambda: ['friedman_mse', 'poisson', 'absolute_error', 'squared_error'])
     max_depth: List[int] = field(default_factory=lambda: [None])
     min_samples_split: List[int] = field(default_factory=lambda: [2, 10, 50, 100])
     min_samples_leaf: List[int] = field(default_factory=lambda: [1, 5, 25, 50])
@@ -28,14 +28,13 @@ class ExtraTreesClassifierParams:
     random_state: List[int] = field(default_factory=lambda: [0])
     verbose: List[int] = field(default_factory=lambda: [0])
     warm_start: List[bool] = field(default_factory=lambda: [False])
-    class_weight: List[str] = field(default_factory=lambda: ['balanced', 'balanced_subsample'])
     ccp_alpha: List[float] = field(default_factory=lambda: [0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
     max_samples: List[int] = field(default_factory=lambda: [None])
 
 
 @dataclass
-class GradientBoostingClassifierParams:
-    loss: List[str] = field(default_factory=lambda: ['exponential', 'log_loss'])
+class GradientBoostingRegressorParams:
+    loss: List[str] = field(default_factory=lambda: ['absolute_error', 'squared_error', 'huber', 'quantile'])
     learning_rate: List[float] = field(default_factory=lambda: [1e-4, 1e-3, 1e-2, 0.1])
     n_estimators: List[int] = field(default_factory=lambda: [10, 50, 100, 250])
     subsample: List[float] = field(default_factory=lambda: [0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
@@ -58,9 +57,9 @@ class GradientBoostingClassifierParams:
 
 
 @dataclass
-class RandomForestClassifierParams:
+class RandomForestRegressorParams:
     n_estimators: List[int] = field(default_factory=lambda: [10, 50, 100, 250])
-    criterion: List[str] = field(default_factory=lambda: ['gini'])
+    criterion: List[str] = field(default_factory=lambda: ['friedman_mse', 'poisson', 'absolute_error', 'squared_error'])
     max_depth: List[int] = field(default_factory=lambda: [None])
     min_samples_split: List[int] = field(default_factory=lambda: [2, 10, 50, 100])
     min_samples_leaf: List[int] = field(default_factory=lambda: [1, 5, 25, 50])
@@ -74,14 +73,13 @@ class RandomForestClassifierParams:
     random_state: List[int] = field(default_factory=lambda: [0])
     verbose: List[int] = field(default_factory=lambda: [0])
     warm_start: List[bool] = field(default_factory=lambda: [False])
-    class_weight: List[str] = field(default_factory=lambda: ['balanced', 'balanced_subsample'])
     ccp_alpha: List[float] = field(default_factory=lambda: [0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
     max_samples: List[int] = field(default_factory=lambda: [None])
 
 
 @dataclass
-class DecisionTreeClassifierParams:
-    criterion: List[str] = field(default_factory=lambda: ['gini'])
+class DecisionTreeRegressorParams:
+    criterion: List[str] = field(default_factory=lambda: ['friedman_mse', 'poisson', 'absolute_error', 'squared_error'])
     splitter: List[str] = field(default_factory=lambda: ['best', 'random'])
     max_depth: List[int] = field(default_factory=lambda: [None])
     min_samples_split: List[int] = field(default_factory=lambda: [2, 10, 50, 100])
@@ -91,13 +89,12 @@ class DecisionTreeClassifierParams:
     random_state: List[int] = field(default_factory=lambda: [0])
     max_leaf_nodes: List[int] = field(default_factory=lambda: [None])
     min_impurity_decrease: List[float] = field(default_factory=lambda: [0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
-    class_weight: List[Optional[str]] = field(default_factory=lambda: ['balanced', None])
     ccp_alpha: List[float] = field(default_factory=lambda: [0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
 
 
 @dataclass
-class ExtraTreeClassifierParams:
-    criterion: List[str] = field(default_factory=lambda: ['gini'])
+class ExtraTreeRegressorParams:
+    criterion: List[str] = field(default_factory=lambda: ['friedman_mse', 'poisson', 'absolute_error', 'squared_error'])
     splitter: List[str] = field(default_factory=lambda: ['best', 'random'])
     max_depth: List[int] = field(default_factory=lambda: [None])
     min_samples_split: List[int] = field(default_factory=lambda: [2, 10, 50, 100])
@@ -107,7 +104,6 @@ class ExtraTreeClassifierParams:
     random_state: List[int] = field(default_factory=lambda: [0])
     max_leaf_nodes: List[int] = field(default_factory=lambda: [None])
     min_impurity_decrease: List[float] = field(default_factory=lambda: [0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
-    class_weight: List[Optional[str]] = field(default_factory=lambda: ['balanced', None])
     ccp_alpha: List[float] = field(default_factory=lambda: [0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
 
 
@@ -144,7 +140,7 @@ class MyEvolOptimizer(EvolutionaryOptimizer):
             lg.error(error)
             raise e
         y_pred = individual.predict(kwargs.get('x_val'))
-        score = roc_auc_score(kwargs.get('y_val'), y_pred)
+        score = -mean_absolute_percentage_error(kwargs.get('y_val'), y_pred)
         return individual, score
 
 
@@ -154,14 +150,14 @@ if __name__ == '__main__':
     console_handler.setLevel("INFO")
     logger.addHandler(console_handler)
 
-    X, y = load_breast_cancer(return_X_y=True)
+    X, y = load_diabetes(return_X_y=True, scaled=True)
     X_tr, X_val, y_tr, y_val = train_test_split(X, y, test_size=100, random_state=0)
     paramdict = {
-        ExtraTreeClassifier: asdict(ExtraTreeClassifierParams()),
-        DecisionTreeClassifier: asdict(DecisionTreeClassifierParams()),
-        ExtraTreesClassifier: asdict(ExtraTreesClassifierParams()),
-        RandomForestClassifier: asdict(RandomForestClassifierParams()),
-        GradientBoostingClassifier: asdict(GradientBoostingClassifierParams())
+        ExtraTreeRegressor: asdict(ExtraTreeRegressorParams()),
+        DecisionTreeRegressor: asdict(DecisionTreeRegressorParams()),
+        ExtraTreesRegressor: asdict(ExtraTreesRegressorParams()),
+        RandomForestRegressor: asdict(RandomForestRegressorParams()),
+        GradientBoostingRegressor: asdict(GradientBoostingRegressorParams())
     }
 
     meo = MyEvolOptimizer(population_size=200,
@@ -170,7 +166,7 @@ if __name__ == '__main__':
                           selection_size=100,
                           num_parents=2,
                           num_children=1,
-                          elite_size=None,
+                          elite_size=5,
                           crossover_type='combination',
                           mutation_type='multiple',
                           comma_plus='comma',
@@ -179,4 +175,4 @@ if __name__ == '__main__':
                           random_state=None,
                           verbose=1)
     model = meo(x_tr=X_tr, x_val=X_val, y_tr=y_tr, y_val=y_val,
-                patience=25, max_score_val=1.)
+                patience=25, max_score_val=0.)
